@@ -18,25 +18,32 @@
       <div id="hurt"></div>
 
       <div id="hud" class="hidden">
-        <div class="top-left">
+        <div class="top-left plate">
           <div class="brand">Ashen Rounds</div>
+          <div class="kicker">Points</div>
           <div id="points">500</div>
           <div id="score-line">Score 0</div>
         </div>
+        <div class="top-center">
+          <div id="round-line">Round 1</div>
+          <div id="left-line">6 husks</div>
+        </div>
         <div class="top-right">
-          <canvas id="minimap" width="210" height="210"></canvas>
+          <div class="map-frame">
+            <canvas id="minimap" width="210" height="210"></canvas>
+          </div>
           <div id="area-name">Ash Hall</div>
         </div>
-        <div class="bottom-left">
+        <div class="bottom-left plate">
+          <div class="kicker">Vitals</div>
           <div class="hp-wrap"><div id="hp-fill"></div></div>
           <div class="hp-row">
             <span id="hp-text">100 / 100</span>
             <span id="perks">—</span>
           </div>
-          <div id="round-line">Round 1</div>
-          <div id="left-line">6 husks</div>
         </div>
-        <div class="bottom-right">
+        <div class="bottom-right plate">
+          <div id="slots"><i id="slot-a" class="on"></i><i id="slot-b" class="locked"></i></div>
           <div id="gun-name">Cinder Pistol</div>
           <div id="ammo">12  /  84</div>
           <div class="reload-wrap"><div id="reload-fill"></div></div>

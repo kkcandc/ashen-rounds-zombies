@@ -185,7 +185,7 @@ export class Director {
 
     this.tickHusks(dt)
     this.tickSpawns(dt)
-    this.husks = this.husks.filter((h) => !(h.state === 'dying' && h.dead > 0.9))
+    this.husks = this.husks.filter((h) => !(h.state === 'dying' && h.dead > 1.2))
     this.tickPhase(dt)
     if (this.banner) this.banner.age += dt
     return this.events
@@ -344,7 +344,7 @@ export class Director {
       const husk = this.husks.find((h) => h.id === id)
       if (!husk || husk.state === 'dying') continue
       husk.hp -= info.dmg
-      husk.flash = 0.09
+      husk.flash = 0.14
       if (husk.hp <= 0) {
         husk.hp = 0
         husk.state = 'dying'
@@ -388,7 +388,7 @@ export class Director {
       return
     }
     best.hp -= KNIFE_DAMAGE
-    best.flash = 0.1
+    best.flash = 0.14
     const kill = best.hp <= 0
     if (kill) {
       best.hp = 0

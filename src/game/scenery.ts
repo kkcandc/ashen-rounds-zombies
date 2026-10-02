@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { DoorId } from './types'
+import { createMaterials, softDisc, tileBox, tilePlane } from './look'
 import {
   BRAZIERS,
   BREACHES,
@@ -16,30 +17,11 @@ export type SceneHandles = {
   vault: THREE.Group
   stations: Map<string, THREE.Group>
   braziers: THREE.PointLight[]
+  cools: THREE.PointLight[]
+  flames: THREE.Object3D[]
+  shafts: THREE.Mesh[]
   dust: THREE.Points
-}
-
-function noiseTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 256
-  c.height = 256
-  const g = c.getContext('2d')
-  if (!g) return new THREE.CanvasTexture(c)
-  const img = g.createImageData(256, 256)
-  for (let i = 0; i < img.data.length; i += 4) {
-    const n = 70 + Math.random() * 90
-    img.data[i] = n
-    img.data[i + 1] = n - 6
-    img.data[i + 2] = n - 14
-    img.data[i + 3] = 255
-  }
-  g.putImageData(img, 0, 0)
-  const tex = new THREE.CanvasTexture(c)
-  tex.wrapS = THREE.RepeatWrapping
-  tex.wrapT = THREE.RepeatWrapping
-  tex.repeat.set(4, 4)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
+  embers: THREE.Points
 }
 
 function labelTexture(text: string): THREE.CanvasTexture {
@@ -65,37 +47,26 @@ function yawToward(x: number, z: number, tx: number, tz: number): number {
 }
 
 export function buildScenery(scene: THREE.Scene): SceneHandles {
-  const floorTex = noiseTexture()
-  const floorMat = new THREE.MeshStandardMaterial({
-    color: 0x5e5850,
-    map: floorTex,
-    roughness: 0.86,
-    metalness: 0.04,
-  })
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x3a342e, roughness: 1, metalness: 0 })
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6e675e, roughness: 0.84, metalness: 0.05 })
-  const sillMat = new THREE.MeshStandardMaterial({ color: 0x4e463e, roughness: 0.8, metalness: 0.08 })
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6d4e34, roughness: 0.78, metalness: 0.02 })
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x5c574e, roughness: 0.9, metalness: 0.06 })
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0x3a3430, roughness: 0.45, metalness: 0.55 })
-  const rustMat = new THREE.MeshStandardMaterial({ color: 0x7a4632, roughness: 0.7, metalness: 0.25 })
-  const emberMat = new THREE.MeshStandardMaterial({
-    color: 0xff6a2a,
-    emissive: 0xff4a12,
-    emissiveIntensity: 2.2,
-    roughness: 0.4,
-  })
+  const mats = createMaterials()
+  const floorMat = mats.floor
+  const ceilMat = mats.ceil
+  const wallMat = mats.wall
+  const sillMat = mats.trim
+  const woodMat = mats.wood
+  const stoneMat = mats.stone
+  const metalMat = mats.metal
+  const rustMat = mats.rust
+  const emberMat = mats.ember
 
   for (const f of FLOORS) {
     const w = f.maxX - f.minX
     const d = f.maxZ - f.minZ
-    const geo = new THREE.PlaneGeometry(w, d)
-    const mesh = new THREE.Mesh(geo, floorMat)
+    const mesh = new THREE.Mesh(tilePlane(w, d), floorMat)
     mesh.rotation.x = -Math.PI / 2
     mesh.position.set((f.minX + f.maxX) / 2, 0, (f.minZ + f.maxZ) / 2)
     mesh.receiveShadow = true
     scene.add(mesh)
-    const ceil = new THREE.Mesh(geo, ceilMat)
+    const ceil = new THREE.Mesh(tilePlane(w, d, 2.8), ceilMat)
     ceil.rotation.x = Math.PI / 2
     ceil.position.set((f.minX + f.maxX) / 2, 3.18, (f.minZ + f.maxZ) / 2)
     scene.add(ceil)
@@ -106,7 +77,7 @@ export function buildScenery(scene: THREE.Scene): SceneHandles {
     const key = `${w.toFixed(2)}|${h.toFixed(2)}|${d.toFixed(2)}`
     let geo = sharedBox.get(key)
     if (!geo) {
-      geo = new THREE.BoxGeometry(w, h, d)
+      geo = tileBox(w, h, d)
       sharedBox.set(key, geo)
     }
     return geo
@@ -131,13 +102,31 @@ export function buildScenery(scene: THREE.Scene): SceneHandles {
     }
   }
 
-  const pipeMat = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.6, metalness: 0.4 })
+  const pipeMat = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.55, metalness: 0.45 })
+  const beamMat = new THREE.MeshStandardMaterial({ color: 0x4a4036, map: mats.wood.map, roughness: 0.72, metalness: 0.18 })
   for (const x of [-6, -2, 2, 6]) {
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 15, 6), pipeMat)
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 16, 8), pipeMat)
     pipe.rotation.z = Math.PI / 2
-    pipe.position.set(x, 2.95, 0)
+    pipe.position.set(x, 2.92, 0)
     scene.add(pipe)
   }
+  const hangBeam = (x: number, z: number, len: number, alongX: boolean) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len : 0.18, 0.16, alongX ? 0.18 : len), beamMat)
+    mesh.position.set(x, 3.02, z)
+    mesh.castShadow = true
+    scene.add(mesh)
+  }
+  for (const z of [-4.4, 0.15, 4.5]) hangBeam(0, z, 19.2, true)
+  for (const z of [-6.2, 0.4, 6.4]) {
+    hangBeam(22, z, 14.5, true)
+    hangBeam(-22, z, 14.5, true)
+  }
+  hangBeam(22, -20.2, 14, true)
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.18, 8), rustMat)
+  collar.position.set(0, 0.16, 0)
+  const capital = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 0.86, 0.16, 8), sillMat)
+  capital.position.set(0, 2.95, 0)
+  scene.add(collar, capital)
 
   const doors: SceneHandles['doors'] = []
   for (const d of DOORS) {
@@ -248,33 +237,142 @@ export function buildScenery(scene: THREE.Scene): SceneHandles {
   vault.position.set(spot0.x, 0, spot0.z)
   scene.add(vault)
 
+  const flameMat = new THREE.MeshBasicMaterial({
+    color: 0xff7a32,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const flames: THREE.Object3D[] = []
+  const addFlame = (x: number, y: number, z: number, scale: number) => {
+    const g = new THREE.Group()
+    const a = new THREE.Mesh(new THREE.PlaneGeometry(0.28 * scale, 0.46 * scale), flameMat)
+    const b = a.clone()
+    b.rotation.y = Math.PI / 2
+    g.add(a, b)
+    g.position.set(x, y, z)
+    scene.add(g)
+    flames.push(g)
+    return g
+  }
+
   const braziers: THREE.PointLight[] = []
   for (const b of BRAZIERS) {
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.2, 0.35, 8), rustMat)
-    bowl.position.set(b.x, 0.2, b.z)
-    const coal = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), emberMat)
-    coal.position.set(b.x, 0.42, b.z)
-    scene.add(bowl, coal)
-    const light = new THREE.PointLight(0xff7a3a, 18, 16, 1.6)
-    light.position.set(b.x, 1.3, b.z)
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.7, 6), rustMat)
+    stand.position.set(b.x, 0.35, b.z)
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.18, 0.22, 8), rustMat)
+    bowl.position.set(b.x, 0.72, b.z)
+    const coal = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), emberMat)
+    coal.position.set(b.x, 0.84, b.z)
+    scene.add(stand, bowl, coal)
+    addFlame(b.x, 1.05, b.z, 1)
+    const light = new THREE.PointLight(0xff6a2a, 26, 13, 2)
+    light.position.set(b.x, 1.35, b.z)
     scene.add(light)
     braziers.push(light)
   }
 
-  const dustCount = 80
+  const sconceAt: { x: number; z: number }[] = [
+    { x: -4.2, z: 0.4 },
+    { x: 4.6, z: -0.6 },
+    { x: 20.5, z: 2.2 },
+    { x: -19.4, z: 1.4 },
+  ]
+  for (const s of sconceAt) {
+    const cage = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), rustMat)
+    cage.position.set(s.x, 2.35, s.z)
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffe2b0, emissive: 0xffb15a, emissiveIntensity: 2.2 }),
+    )
+    bulb.position.set(s.x, 2.35, s.z)
+    scene.add(cage, bulb)
+    addFlame(s.x, 2.42, s.z, 0.45)
+  }
+
+  const cools: THREE.PointLight[] = []
+  const coolAt: { x: number; z: number }[] = [
+    { x: -5.2, z: -7.2 },
+    { x: 4.6, z: -7.2 },
+  ]
+  for (const c of coolAt) {
+    const light = new THREE.PointLight(0x8eb4d8, 11, 11, 2)
+    light.position.set(c.x, 2.15, c.z)
+    scene.add(light)
+    cools.push(light)
+  }
+
+  const shaftMat = new THREE.MeshBasicMaterial({
+    color: 0xc5d6ea,
+    transparent: true,
+    opacity: 0.07,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const shafts: THREE.Mesh[] = []
+  const addShaft = (x: number, z: number, rotY: number) => {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 2.6), shaftMat.clone())
+    mesh.position.set(x, 1.55, z)
+    mesh.rotation.y = rotY
+    mesh.rotation.x = 0.35
+    scene.add(mesh)
+    shafts.push(mesh)
+  }
+  addShaft(-5.2, -7.55, 0)
+  addShaft(4.6, -7.55, 0)
+  addShaft(0, 7.55, Math.PI)
+  addShaft(29.5, -4, Math.PI / 2)
+  addShaft(-29.5, 5, -Math.PI / 2)
+
+  const disc = softDisc()
+  const dustCount = 160
   const positions = new Float32Array(dustCount * 3)
   for (let i = 0; i < dustCount; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 18
-    positions[i * 3 + 1] = 0.4 + Math.random() * 2.4
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 14
+    positions[i * 3] = (Math.random() - 0.5) * 16
+    positions[i * 3 + 1] = Math.random() * 3
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 16
   }
   const dustGeo = new THREE.BufferGeometry()
   dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   const dust = new THREE.Points(
     dustGeo,
-    new THREE.PointsMaterial({ color: 0xe6d7c4, size: 0.035, transparent: true, opacity: 0.35, depthWrite: false }),
+    new THREE.PointsMaterial({
+      color: 0xd9cbb8,
+      size: 0.055,
+      map: disc,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
   )
   scene.add(dust)
 
-  return { doors, planks, vault, stations, braziers, dust }
+  const emberCount = 48
+  const emberPos = new Float32Array(emberCount * 3)
+  for (let i = 0; i < emberCount; i++) {
+    emberPos[i * 3] = (Math.random() - 0.5) * 14
+    emberPos[i * 3 + 1] = Math.random() * 2.4
+    emberPos[i * 3 + 2] = (Math.random() - 0.5) * 14
+  }
+  const emberGeo = new THREE.BufferGeometry()
+  emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3))
+  const embers = new THREE.Points(
+    emberGeo,
+    new THREE.PointsMaterial({
+      color: 0xff6a2a,
+      size: 0.07,
+      map: disc,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
+  scene.add(embers)
+
+  return { doors, planks, vault, stations, braziers, cools, flames, shafts, dust, embers }
 }

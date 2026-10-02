@@ -1,8 +1,14 @@
 import * as THREE from 'three'
 import { WEAPONS } from './balance'
-import { createGuns, createHuskMesh, paintHusk, type HuskMesh } from './actors'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { createHuskMesh, createViewmodel, fadeHusk, paintHusk, type HuskMesh } from './actors'
 import { Sfx } from './audio'
 import { Director } from './director'
+import { Juice, bunkerImpact } from './fx'
 import { buildScenery } from './scenery'
 import type { FrameInput, Husk } from './types'
 import { DOORS, SPAWN, VAULT_SPOTS } from './world'
@@ -23,12 +29,17 @@ export class Game {
   private readonly scenery: ReturnType<typeof buildScenery>
   private readonly pool: HuskMesh[] = []
   private readonly guns: Record<string, THREE.Group>
+  private readonly armsPistol: THREE.Group
+  private readonly armsRifle: THREE.Group
   private readonly gunRoot = new THREE.Group()
   private readonly flash: THREE.SpotLight
-  private readonly sparks: THREE.Points
-  private readonly sparkPos: Float32Array
-  private readonly sparkVel: Float32Array
-  private readonly sparkLife: Float32Array
+  private readonly juice: Juice
+  private readonly composer: EffectComposer
+  private readonly bloom: UnrealBloomPass
+  private readonly moon: THREE.DirectionalLight
+  private muzzleLeft = 0
+  private readonly muzzleWorld = new THREE.Vector3()
+  private readonly aimWorld = new THREE.Vector3()
   private yaw = 0
   private pitch = 0
   private bob = 0
@@ -47,21 +58,34 @@ export class Game {
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.4))
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.15
-    this.renderer.setClearColor(0x120f0c)
+    this.renderer.toneMappingExposure = 2.2
+    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.setClearColor(0x241e19)
 
-    this.scene.background = new THREE.Color(0x161310)
-    this.scene.fog = new THREE.FogExp2(0x1a1612, 0.012)
-    this.scene.add(new THREE.AmbientLight(0xb3a898, 0.72))
-    const hemi = new THREE.HemisphereLight(0xb7c4d4, 0x5c4030, 0.55)
+    this.scene.background = new THREE.Color(0x3a312a)
+    this.scene.fog = new THREE.FogExp2(0x51463c, 0.016)
+    this.scene.add(new THREE.AmbientLight(0xa89888, 0.34))
+    const hemi = new THREE.HemisphereLight(0xa8bdd4, 0x6a3a22, 0.62)
     this.scene.add(hemi)
-    const moon = new THREE.DirectionalLight(0xfff0dd, 0.95)
-    moon.position.set(12, 18, 8)
-    this.scene.add(moon)
+    this.moon = new THREE.DirectionalLight(0xd5e2f2, 0.55)
+    this.moon.position.set(8, 14, 6)
+    this.moon.castShadow = true
+    this.moon.shadow.mapSize.set(1024, 1024)
+    this.moon.shadow.bias = -0.001
+    this.moon.shadow.camera.near = 0.5
+    this.moon.shadow.camera.far = 32
+    const shadowCam = this.moon.shadow.camera as THREE.OrthographicCamera
+    shadowCam.left = -12
+    shadowCam.right = 12
+    shadowCam.top = 12
+    shadowCam.bottom = -12
+    this.scene.add(this.moon)
+    this.scene.add(this.moon.target)
 
     this.scenery = buildScenery(this.scene)
     for (let i = 0; i < 36; i++) {
@@ -70,31 +94,52 @@ export class Game {
       this.pool.push(mesh)
     }
 
-    this.guns = createGuns()
+    const view = createViewmodel()
+    this.guns = view.guns
+    this.armsPistol = view.armsPistol
+    this.armsRifle = view.armsRifle
     for (const gun of Object.values(this.guns)) this.gunRoot.add(gun)
-    this.gunRoot.position.set(0.34, -0.22, -0.46)
-    this.gunRoot.scale.setScalar(1.45)
+    this.gunRoot.add(this.armsPistol, this.armsRifle)
+    this.gunRoot.position.set(0.2, -0.16, -0.5)
+    this.gunRoot.scale.setScalar(1.5)
     this.camera.add(this.gunRoot)
 
-    this.flash = new THREE.SpotLight(0xfff1dc, 36, 32, 0.7, 0.45, 1.15)
-    this.flash.position.set(0.04, -0.02, 0.05)
-    this.flash.target.position.set(0, 0, -1)
+    this.flash = new THREE.SpotLight(0xfff1dc, 0, 26, 0.5, 0.35, 1)
+    this.flash.position.set(0.12, -0.08, -0.2)
+    this.flash.target.position.set(0, -0.04, -1)
     this.camera.add(this.flash)
     this.camera.add(this.flash.target)
-    const lamp = new THREE.PointLight(0xffe2c2, 7, 12, 1.5)
+    const lamp = new THREE.PointLight(0xffd7b0, 8, 12, 2)
+    lamp.position.set(0, 0, 0.1)
     this.camera.add(lamp)
     this.scene.add(this.camera)
+    this.juice = new Juice(this.scene)
 
-    this.sparkLife = new Float32Array(72)
-    this.sparkVel = new Float32Array(72 * 3)
-    this.sparkPos = new Float32Array(72 * 3)
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(this.sparkPos, 3))
-    this.sparks = new THREE.Points(
-      geo,
-      new THREE.PointsMaterial({ color: 0xff8a3a, size: 0.07, transparent: true, opacity: 0.9, depthWrite: false }),
+    this.composer = new EffectComposer(this.renderer)
+    this.composer.addPass(new RenderPass(this.scene, this.camera))
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth * 0.6, window.innerHeight * 0.6), 0.22, 0.38, 0.82)
+    this.composer.addPass(this.bloom)
+    this.composer.addPass(
+      new ShaderPass({
+        uniforms: { tDiffuse: { value: null } },
+        vertexShader:
+          'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          varying vec2 vUv;
+          void main() {
+            vec3 col = texture2D(tDiffuse, vUv).rgb;
+            col = (col - 0.5) * 1.04 + 0.52;
+            float luma = dot(col, vec3(0.299, 0.587, 0.114));
+            vec3 cool = col * vec3(0.88, 0.94, 1.05);
+            vec3 warm = col * vec3(1.07, 0.96, 0.86);
+            col = mix(cool, warm, smoothstep(0.1, 0.75, luma));
+            gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+          }
+        `,
+      }),
     )
-    this.scene.add(this.sparks)
+    this.composer.addPass(new OutputPass())
 
     this.resize()
     window.addEventListener('resize', () => this.resize())
@@ -183,6 +228,8 @@ export class Game {
     this.camera.aspect = w / Math.max(1, h)
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
+    this.composer.setSize(w, h)
+    this.bloom.setSize(Math.max(1, w * 0.6), Math.max(1, h * 0.6))
   }
 
   private onKey(e: KeyboardEvent, down: boolean) {
@@ -275,7 +322,7 @@ export class Game {
       this.camera.rotation.x = -0.06
       this.gunRoot.visible = false
       this.syncWorld(dt, false)
-      this.renderer.render(this.scene, this.camera)
+      this.composer.render()
       return
     }
 
@@ -328,9 +375,18 @@ export class Game {
     this.camera.position.set(p.x, 1.62 + bobY, p.z)
     this.gunRoot.visible = this.mode !== 'dead'
     this.kick = Math.max(0, this.kick - dt * 8)
-    this.gunRoot.position.z = -0.52 - this.kick * 0.08
-    this.gunRoot.position.y = -0.26 + Math.sin(this.bob * 2) * Math.min(0.012, speed * 0.002)
-    this.gunRoot.rotation.x = this.kick * 0.18 + (this.director.player.reload > 0 ? 0.25 : 0)
+    this.gunRoot.position.x = 0.2
+    this.gunRoot.position.z = -0.5 - this.kick * 0.1
+    this.gunRoot.position.y = -0.16 + Math.sin(this.bob * 2) * Math.min(0.012, speed * 0.002)
+    this.gunRoot.rotation.x = this.kick * 0.22 + (this.director.player.reload > 0 ? 0.28 : 0)
+    const knife = this.director.player.knifeCd
+    this.gunRoot.rotation.z = knife > 0 ? Math.sin((0.62 - knife) * 9) * 0.45 : 0
+    if (this.muzzleLeft > 0) {
+      this.muzzleLeft = Math.max(0, this.muzzleLeft - dt)
+      this.flash.intensity = 84 * (this.muzzleLeft / 0.05)
+    } else {
+      this.flash.intensity = 0
+    }
 
     if (this.mode === 'play' && speed > 2.2) {
       this.foot -= dt
@@ -342,7 +398,7 @@ export class Game {
 
     this.syncWorld(dt, true)
     this.drawHud(input)
-    this.renderer.render(this.scene, this.camera)
+    this.composer.render()
   }
 
   private consume(events: ReturnType<Director['update']>) {
@@ -353,7 +409,7 @@ export class Game {
         this.kick = Math.min(1, this.kick + (def.report === 'shot' || def.report === 'heavy' ? 0.85 : 0.45))
         this.recoil = Math.min(0.08, this.recoil + (def.report === 'rifle' ? 0.03 : 0.012))
         this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch + (def.report === 'rifle' ? 0.012 : 0.004)))
-        for (const hit of e.hits) this.burst(hit.x, hit.y, hit.z)
+        this.fireJuice(e.weaponId, e.hits)
         const marker = document.getElementById('hitmarker')
         if (marker && e.hits.length) {
           marker.classList.toggle('head', e.hits.some((h) => h.head))
@@ -427,18 +483,82 @@ export class Game {
     window.setTimeout(() => el.remove(), 700)
   }
 
+  private fireJuice(weaponId: string, hits: { x: number; y: number; z: number; head: boolean }[]) {
+    const muzzle = this.guns[weaponId]?.getObjectByName('muzzle')
+    if (muzzle) muzzle.getWorldPosition(this.muzzleWorld)
+    else this.muzzleWorld.copy(this.camera.position)
+    this.juice.muzzle(this.muzzleWorld, this.camera)
+    this.muzzleLeft = 0.05
+    this.flash.intensity = 84
+    this.aimWorld.set(0, 0, -1).applyQuaternion(this.camera.quaternion)
+    const origin = this.camera.position
+    const world = bunkerImpact(
+      origin.x,
+      origin.y,
+      origin.z,
+      this.aimWorld.x,
+      this.aimWorld.y,
+      this.aimWorld.z,
+      48,
+      this.director.doors,
+    )
+    let closest = Infinity
+    const shown = hits.slice(0, 4)
+    for (const hit of shown) {
+      const dist = Math.hypot(hit.x - origin.x, hit.y - origin.y, hit.z - origin.z)
+      if (dist < closest) closest = dist
+      this.juice.tracer(this.muzzleWorld, new THREE.Vector3(hit.x, hit.y, hit.z))
+      this.juice.burst(hit.x, hit.y, hit.z, hit.head ? 'spark' : 'blood', hit.head ? 7 : 5)
+      this.juice.burst(hit.x, hit.y, hit.z, 'ash', 4)
+    }
+    const wallFirst = !!world && world.t < closest - 0.12
+    if (world && (wallFirst || shown.length === 0)) {
+      this.juice.tracer(this.muzzleWorld, new THREE.Vector3(world.x, world.y, world.z))
+      this.juice.scorch(world)
+      this.juice.burst(world.x, world.y, world.z, 'spark', 8)
+    } else if (shown.length === 0) {
+      this.juice.tracer(this.muzzleWorld, origin.clone().addScaledVector(this.aimWorld, 16))
+    }
+  }
+
   private syncWorld(dt: number, live: boolean) {
     const t = performance.now() * 0.001
+    const anchor = this.mode === 'menu' ? SPAWN : this.director.player
+    this.moon.position.set(anchor.x + 5, 12, anchor.z + 4)
+    this.moon.target.position.set(anchor.x, 0, anchor.z)
+    this.moon.target.updateMatrixWorld()
     this.scenery.braziers.forEach((light, i) => {
-      light.intensity = 16 + Math.sin(t * 9 + i * 2) * 1.4 + Math.sin(t * 21 + i) * 0.8
+      const dip = Math.sin(t * 2.2 + i * 1.3) > 0.96 ? 0.28 : 1
+      light.intensity = (34 + Math.sin(t * 7.5 + i * 1.7) * 8 + Math.sin(t * 18 + i) * 4) * dip
     })
-    const dust = this.scenery.dust.geometry.getAttribute('position') as THREE.BufferAttribute
-    for (let i = 0; i < dust.count; i++) {
-      let y = dust.getY(i) + dt * 0.08
-      if (y > 2.8) y = 0.3
-      dust.setY(i, y)
+    this.scenery.cools.forEach((light, i) => {
+      light.intensity = 8 + Math.sin(t * 1.1 + i) * 1.4
+    })
+    this.scenery.flames.forEach((flame, i) => {
+      const s = 0.82 + Math.sin(t * 13 + i) * 0.14 + Math.sin(t * 29 + i * 2) * 0.06
+      flame.scale.set(1, Math.max(0.45, s), 1)
+    })
+    this.scenery.shafts.forEach((shaft, i) => {
+      const mat = shaft.material as THREE.MeshBasicMaterial
+      mat.opacity = 0.05 + Math.sin(t * 0.6 + i) * 0.018
+    })
+    this.scenery.dust.position.set(anchor.x, 0, anchor.z)
+    this.scenery.embers.position.set(anchor.x, 0, anchor.z)
+    const drift = (points: THREE.Points, speed: number, spread: number) => {
+      const dust = points.geometry.getAttribute('position') as THREE.BufferAttribute
+      for (let i = 0; i < dust.count; i++) {
+        let y = dust.getY(i) + dt * speed
+        let x = dust.getX(i) + dt * 0.05
+        if (y > 3) y = 0.15
+        if (x > spread) x = -spread
+        dust.setY(i, y)
+        dust.setX(i, x)
+      }
+      dust.needsUpdate = true
     }
-    dust.needsUpdate = true
+    drift(this.scenery.dust, 0.12, 8)
+    drift(this.scenery.embers, 0.28, 7)
+    this.juice.update(dt)
 
     for (const door of this.scenery.doors) {
       const open = this.director.doors[door.id]
@@ -485,24 +605,20 @@ export class Game {
       this.poseHusk(mesh, husk)
     })
     this.pool.forEach((mesh, i) => {
-      if (!active.has(i)) mesh.group.visible = false
+      if (!active.has(i)) {
+        mesh.group.visible = false
+        if (mesh.dying) {
+          mesh.dying = false
+          fadeHusk(mesh, 1)
+        }
+      }
     })
 
     const weaponId = this.director.currentWeapon().id
-    for (const [id, gun] of Object.entries(this.guns)) gun.visible = id === weaponId && this.gunRoot.visible
-
-    for (let i = 0; i < this.sparkLife.length; i++) {
-      if (this.sparkLife[i] <= 0) {
-        this.sparkPos[i * 3 + 1] = -10
-        continue
-      }
-      this.sparkLife[i] -= dt
-      this.sparkPos[i * 3] += this.sparkVel[i * 3] * dt
-      this.sparkPos[i * 3 + 1] += this.sparkVel[i * 3 + 1] * dt
-      this.sparkPos[i * 3 + 2] += this.sparkVel[i * 3 + 2] * dt
-      this.sparkVel[i * 3 + 1] -= dt * 2.2
-    }
-    ;(this.sparks.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
+    const showGun = this.gunRoot.visible
+    for (const [id, gun] of Object.entries(this.guns)) gun.visible = id === weaponId && showGun
+    this.armsPistol.visible = showGun && weaponId === 'pistol'
+    this.armsRifle.visible = showGun && weaponId !== 'pistol'
 
     if (live && this.mode === 'play') {
       this.groan -= dt
@@ -537,42 +653,35 @@ export class Game {
     }
     husk.prevX = husk.x
     husk.prevZ = husk.z
-    const swing = Math.sin(husk.anim)
+    const swing = Math.sin(husk.anim + mesh.phase)
     const tearing = husk.state === 'tear'
-    mesh.armL.rotation.x = tearing ? -1.1 + swing * 0.25 : swing * 0.7
-    mesh.armR.rotation.x = tearing ? -1.1 - swing * 0.25 : -swing * 0.7
-    mesh.legL.rotation.x = tearing ? 0 : swing * 0.6
-    mesh.legR.rotation.x = tearing ? 0 : -swing * 0.6
+    mesh.armL.rotation.x = tearing ? -1.35 + swing * 0.45 : 0.25 + swing * 0.9
+    mesh.armR.rotation.x = tearing ? -0.7 - swing * 0.55 : 0.1 - swing * 0.9
+    mesh.armL.rotation.z = 0.2
+    mesh.armR.rotation.z = -0.32
+    mesh.legL.rotation.x = tearing ? 0.08 : swing * 0.75
+    mesh.legR.rotation.x = tearing ? 0.12 : -swing * 0.75 * mesh.drag
+    mesh.group.rotation.z = Math.sin(husk.anim * 0.45 + mesh.phase) * 0.06
     if (husk.state === 'dying') {
-      mesh.group.rotation.x = Math.min(1.25, husk.dead * 2)
-      mesh.group.position.y = -husk.dead * 0.35
+      if (!mesh.dying) {
+        mesh.dying = true
+        this.juice.death(husk.x, husk.z)
+      }
+      const k = Math.min(1, husk.dead / 1.05)
+      mesh.group.rotation.x = mesh.hunch + k * 1.25
+      mesh.group.position.y = -k * 0.42
+      mesh.group.scale.setScalar(husk.scale * (1 - k * 0.12))
+      fadeHusk(mesh, 1 - Math.min(1, Math.max(0, (husk.dead - 0.15) / 0.9)))
     } else {
-      mesh.group.rotation.x = 0
-      mesh.group.position.y = 0
+      mesh.dying = false
+      mesh.group.rotation.x = mesh.hunch
+      mesh.group.position.y = Math.abs(Math.sin(husk.anim + mesh.phase)) * 0.03
+      mesh.group.scale.setScalar(husk.scale)
+      fadeHusk(mesh, 1)
     }
     const hot = husk.flash > 0
-    mesh.skin.emissive.setHex(hot ? 0xffe2c4 : husk.kind === 'cinder' ? 0x441608 : 0x000000)
-    mesh.skin.emissiveIntensity = hot ? 0.8 : husk.kind === 'cinder' ? 0.35 : 0
-  }
-
-  private burst(x: number, y: number, z: number) {
-    for (let n = 0; n < 4; n++) {
-      let slot = -1
-      for (let i = 0; i < this.sparkLife.length; i++) {
-        if (this.sparkLife[i] <= 0) {
-          slot = i
-          break
-        }
-      }
-      if (slot < 0) return
-      this.sparkLife[slot] = 0.25 + Math.random() * 0.2
-      this.sparkPos[slot * 3] = x
-      this.sparkPos[slot * 3 + 1] = y
-      this.sparkPos[slot * 3 + 2] = z
-      this.sparkVel[slot * 3] = (Math.random() - 0.5) * 2.4
-      this.sparkVel[slot * 3 + 1] = Math.random() * 1.8
-      this.sparkVel[slot * 3 + 2] = (Math.random() - 0.5) * 2.4
-    }
+    mesh.skin.emissive.setHex(hot ? 0xfff0dc : husk.kind === 'cinder' ? 0x5a220c : 0x000000)
+    mesh.skin.emissiveIntensity = hot ? 1.7 : husk.kind === 'cinder' ? 0.4 : 0
   }
 
   private drawHud(input: FrameInput) {
@@ -589,6 +698,10 @@ export class Game {
     this.setText('left-line', left === 1 && d.phase === 'fight' ? 'Last husk' : `${left} husks`)
     this.setText('gun-name', def.name)
     this.setText('ammo', `${gun.mag}  /  ${gun.reserve}`)
+    document.getElementById('slot-a')?.classList.toggle('on', p.slot === 0)
+    const slotB = document.getElementById('slot-b')
+    slotB?.classList.toggle('on', p.slot === 1)
+    slotB?.classList.toggle('locked', !p.heavy)
     this.setText('area-name', d.areaName())
     const perks = [p.perks.heart ? 'HEART' : '', p.perks.step ? 'STEP' : ''].filter(Boolean).join('   ')
     this.setText('perks', perks || '—')
@@ -637,7 +750,7 @@ export class Game {
     const w = canvas.width
     const h = canvas.height
     ctx.clearRect(0, 0, w, h)
-    ctx.fillStyle = 'rgba(12, 10, 8, 0.82)'
+    ctx.fillStyle = '#100d0b'
     ctx.fillRect(0, 0, w, h)
     const X0 = -32
     const X1 = 32
@@ -652,8 +765,15 @@ export class Game {
       { x0: 13.8, x1: 30.3, z0: -26.3, z1: -14.2, open: this.director.doors.rift },
     ]
     for (const r of rooms) {
-      ctx.fillStyle = r.open ? 'rgba(196, 176, 150, 0.28)' : 'rgba(90, 70, 58, 0.18)'
-      ctx.fillRect(px(r.x0), py(r.z0), px(r.x1) - px(r.x0), py(r.z1) - py(r.z0))
+      ctx.fillStyle = r.open ? 'rgba(214, 176, 132, 0.34)' : 'rgba(70, 54, 44, 0.28)'
+      ctx.strokeStyle = r.open ? 'rgba(255, 196, 140, 0.45)' : 'rgba(120, 90, 70, 0.25)'
+      ctx.lineWidth = 1
+      const rx = px(r.x0)
+      const ry = py(r.z0)
+      const rw = px(r.x1) - rx
+      const rh = py(r.z1) - ry
+      ctx.fillRect(rx, ry, rw, rh)
+      ctx.strokeRect(rx, ry, rw, rh)
     }
     ctx.strokeStyle = '#c47a45'
     ctx.lineWidth = 2

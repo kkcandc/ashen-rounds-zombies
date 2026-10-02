@@ -2,6 +2,16 @@
 
 A first-person, round-based survival game set in a ruined outpost. Hold Ash Hall, buy your way into the Relay Pit, Watch Gallery, and Ember Crypt, and last as many waves as you can. Everything here is original: places, arms, and the Ember Vault were made for this game.
 
+## Visual pass
+
+The bunker, husks, and first-person arms got a lighting and material pass. Gameplay is unchanged: same rooms, gates, wall buys, and round loop.
+
+- Warm brazier pools against cool window light, with flickering practicals, fog, and drifting ash
+- Tiled concrete, timber, and metal so walls and floors read as surfaces
+- Hunched husks with kind silhouettes, hit flashes, and an ash dissolve
+- Stylized arms, muzzle flash, tracers, and scorch marks
+- Tighter arcade HUD, plus a light bloom and ash/ember grade
+
 ## Play
 
 Live game: https://ashen-rounds.vercel.app
