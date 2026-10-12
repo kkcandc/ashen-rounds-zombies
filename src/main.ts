@@ -4,6 +4,8 @@ import '@fontsource/source-sans-3/400.css'
 import '@fontsource/source-sans-3/600.css'
 import { Game } from './game/game'
 
+document.documentElement.dataset.ashenBuild = 'flinch-9f36'
+
 const canvas = document.querySelector<HTMLCanvasElement>('#view')
 if (!canvas) {
   throw new Error('Missing canvas')

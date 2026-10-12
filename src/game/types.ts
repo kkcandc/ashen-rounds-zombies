@@ -27,6 +27,9 @@ export type Husk = {
   pathCd: number
   dead: number
   flash: number
+  /** Seconds of impact lean left. Visual only — movement and damage ignore it. */
+  flinch: number
+  flinchHead: boolean
   anim: number
   stuck: number
   prevX: number

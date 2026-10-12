@@ -122,6 +122,23 @@ for (let i = 0; i < 6; i++) {
 assert(shooter.player.points > 500, `hits pay points (${shooter.player.points})`)
 assert(shooter.husks.length === 0 || shooter.husks[0].state === 'dying' || shooter.husks[0].hp < 500, 'pistol damages a husk')
 
+const flop = new Director()
+flop.perfectAim = true
+flop.queued = 0
+const doll = createHusk(0, 1, 1, 'husk', 21)
+doll.hp = 500
+doll.maxHp = 500
+flop.husks = [doll]
+flop.player.x = 0
+flop.player.z = 4
+const fy = 1.15 - 1.62
+const fz = 1 - 4
+const fl = Math.hypot(0, fy, fz)
+const beforeHp = doll.hp
+flop.update(0.05, inp({ shootEdge: true, aim: { x: 0, y: fy / fl, z: fz / fl } }))
+assert(doll.hp < beforeHp && doll.hp >= beforeHp - 40, `body shot damage stays a pistol hit (${beforeHp} -> ${doll.hp})`)
+assert(doll.flinch > 0 && doll.state !== 'dying', 'a body shot flinches the husk without killing it')
+
 const head = hitHusk(0, 1.62, 4, 0, 0.02, -1, { x: 0, z: 0.2, scale: 1 }, 40)
 assert(head != null, 'a level shot meets a husk')
 const miss = hitHusk(0, 1.62, 4, 1, 0, 0, { x: 0, z: 0.2, scale: 1 }, 40)

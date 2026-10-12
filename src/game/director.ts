@@ -63,10 +63,21 @@ export function createHusk(x: number, z: number, round: number, kind: Kind = 'hu
     pathCd: 0,
     dead: 0,
     flash: 0,
+    flinch: 0,
+    flinchHead: false,
     anim: 0,
     stuck: 0,
     prevX: x,
     prevZ: z,
+  }
+}
+
+/** Visual stagger only. Does not move the husk or change damage. */
+function stagger(husk: Husk, head: boolean) {
+  const power = head ? 0.5 : 0.42
+  if (power >= husk.flinch) {
+    husk.flinch = power
+    husk.flinchHead = head
   }
 }
 
@@ -345,6 +356,7 @@ export class Director {
       if (!husk || husk.state === 'dying') continue
       husk.hp -= info.dmg
       husk.flash = 0.14
+      stagger(husk, info.head)
       if (husk.hp <= 0) {
         husk.hp = 0
         husk.state = 'dying'
@@ -389,6 +401,7 @@ export class Director {
     }
     best.hp -= KNIFE_DAMAGE
     best.flash = 0.14
+    stagger(best, false)
     const kill = best.hp <= 0
     if (kill) {
       best.hp = 0
@@ -783,6 +796,7 @@ export class Director {
     const p = this.player
     for (const husk of this.husks) {
       husk.flash = Math.max(0, husk.flash - dt)
+      husk.flinch = Math.max(0, husk.flinch - dt)
       husk.anim += dt * (husk.state === 'tear' ? 7 : husk.speed * 3.2)
       if (husk.state === 'dying') {
         husk.dead += dt

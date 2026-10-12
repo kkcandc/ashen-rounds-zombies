@@ -45,6 +45,10 @@ export class Game {
   private bob = 0
   private recoil = 0
   private kick = 0
+  private shake = 0
+  private shakeMag = 0
+  private shakeSeed = 0
+  private markerToken = 0
   private foot = 0
   private groan = 2
   private idle = 0
@@ -373,6 +377,17 @@ export class Game {
     this.bob += dt * Math.max(1.2, speed) * 1.7
     const bobY = this.mode === 'play' ? Math.sin(this.bob) * Math.min(0.045, speed * 0.007) : 0
     this.camera.position.set(p.x, 1.62 + bobY, p.z)
+    if (this.shake > 0) {
+      const left = this.shake
+      this.shake = Math.max(0, this.shake - dt)
+      const amp = this.shakeMag * (left / 0.2)
+      const t = this.shakeSeed + performance.now() * 0.055
+      this.camera.position.x += Math.sin(t * 1.7) * amp
+      this.camera.position.y += Math.cos(t * 2.2) * amp * 0.65
+      this.camera.rotation.z = Math.sin(t * 1.4) * amp * 2.4
+    } else {
+      this.camera.rotation.z = 0
+    }
     this.gunRoot.visible = this.mode !== 'dead'
     this.kick = Math.max(0, this.kick - dt * 8)
     this.gunRoot.position.x = 0.2
@@ -402,21 +417,42 @@ export class Game {
   }
 
   private consume(events: ReturnType<Director['update']>) {
+    let killed = false
+    let killHead = false
     for (const e of events) {
-      if (e.type === 'shot') {
+      if (e.type === 'kill') {
+        killed = true
+        killHead = killHead || e.head
+      } else if (e.type === 'shot') {
         const def = WEAPONS[e.weaponId]
         this.sfx.shot(def.report)
         this.kick = Math.min(1, this.kick + (def.report === 'shot' || def.report === 'heavy' ? 0.85 : 0.45))
         this.recoil = Math.min(0.08, this.recoil + (def.report === 'rifle' ? 0.03 : 0.012))
         this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch + (def.report === 'rifle' ? 0.012 : 0.004)))
         this.fireJuice(e.weaponId, e.hits)
-        const marker = document.getElementById('hitmarker')
-        if (marker && e.hits.length) {
-          marker.classList.toggle('head', e.hits.some((h) => h.head))
-          marker.classList.add('show')
-          window.setTimeout(() => marker.classList.remove('show'), 70)
+        const landed = e.hits.length > 0
+        const head = e.hits.some((h) => h.head)
+        if (landed) {
+          const mag = killed ? (killHead ? 0.058 : 0.048) : head ? 0.032 : 0.02
+          const dur = killed ? 0.2 : 0.11
+          if (dur >= this.shake) {
+            this.shake = dur
+            this.shakeMag = mag
+            this.shakeSeed = Math.random() * 8
+          }
         }
-        if (e.hits.length) this.sfx.hit(e.hits.some((h) => h.head))
+        const marker = document.getElementById('hitmarker')
+        if (marker && landed) {
+          const token = ++this.markerToken
+          marker.classList.toggle('head', head)
+          marker.classList.toggle('kill', killed)
+          marker.classList.add('show')
+          window.setTimeout(() => {
+            if (token !== this.markerToken) return
+            marker.classList.remove('show')
+          }, killed ? 160 : 90)
+        }
+        if (landed) this.sfx.hit(head)
       } else if (e.type === 'dry') this.sfx.dry()
       else if (e.type === 'reload') this.sfx.reload()
       else if (e.type === 'player-hit') {
@@ -661,20 +697,28 @@ export class Game {
     mesh.armR.rotation.z = -0.32
     mesh.legL.rotation.x = tearing ? 0.08 : swing * 0.75
     mesh.legR.rotation.x = tearing ? 0.12 : -swing * 0.75 * mesh.drag
-    mesh.group.rotation.z = Math.sin(husk.anim * 0.45 + mesh.phase) * 0.06
+    const peak = husk.flinchHead ? 0.5 : 0.42
+    const flinchT = husk.flinch > 0 ? Math.min(1, husk.flinch / peak) : 0
+    const lean = Math.pow(flinchT, 0.4) * (husk.flinchHead ? 0.62 : 0.44)
+    const side = husk.id % 2 === 0 ? 1 : -1
+    mesh.group.rotation.z = Math.sin(husk.anim * 0.45 + mesh.phase) * 0.06 + lean * 0.7 * side
+    mesh.armL.rotation.x += tearing ? lean * 1.15 : -lean * 1.35
+    mesh.armR.rotation.x += tearing ? lean * 0.95 : -lean * 1.15
+    mesh.armL.rotation.z += lean * 0.95
+    mesh.armR.rotation.z -= lean * 0.95
     if (husk.state === 'dying') {
       if (!mesh.dying) {
         mesh.dying = true
         this.juice.death(husk.x, husk.z)
       }
       const k = Math.min(1, husk.dead / 1.05)
-      mesh.group.rotation.x = mesh.hunch + k * 1.25
+      mesh.group.rotation.x = mesh.hunch - lean * (1 - k * 0.4) + k * 1.25
       mesh.group.position.y = -k * 0.42
       mesh.group.scale.setScalar(husk.scale * (1 - k * 0.12))
       fadeHusk(mesh, 1 - Math.min(1, Math.max(0, (husk.dead - 0.15) / 0.9)))
     } else {
       mesh.dying = false
-      mesh.group.rotation.x = mesh.hunch
+      mesh.group.rotation.x = mesh.hunch - lean
       mesh.group.position.y = Math.abs(Math.sin(husk.anim + mesh.phase)) * 0.03
       mesh.group.scale.setScalar(husk.scale)
       fadeHusk(mesh, 1)

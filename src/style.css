@@ -279,6 +279,41 @@ html, body, #app {
 #hitmarker i:nth-child(3) { left: 0; bottom: 4px; transform: rotate(-45deg); }
 #hitmarker i:nth-child(4) { right: 0; bottom: 4px; transform: rotate(45deg); }
 
+#hitmarker.kill {
+  width: 30px;
+  height: 30px;
+}
+
+#hitmarker.kill i {
+  width: 18px;
+  height: 3px;
+  left: 6px;
+  top: 13px;
+  right: auto;
+  bottom: auto;
+  background: #ff5a1f;
+  box-shadow: 0 0 8px rgba(255, 80, 20, 0.95);
+}
+
+#hitmarker.kill i:nth-child(1) { transform: rotate(42deg); }
+#hitmarker.kill i:nth-child(2) { transform: rotate(-42deg); }
+#hitmarker.kill i:nth-child(3),
+#hitmarker.kill i:nth-child(4) { opacity: 0; }
+
+#hitmarker.kill.head i {
+  background: #ffe1a3;
+  box-shadow: 0 0 10px rgba(255, 196, 110, 0.95);
+}
+
+#hitmarker.kill.show {
+  animation: killpop 0.16s ease-out;
+}
+
+@keyframes killpop {
+  from { transform: translate(-50%, -50%) scale(1.6); }
+  to { transform: translate(-50%, -50%) scale(1); }
+}
+
 #floaters {
   position: absolute;
   left: 58%;
