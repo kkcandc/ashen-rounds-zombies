@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ashen Rounds</title>
+    <meta name="ashen-build" content="flinch-9f36" />
+    <meta
+      name="description"
+      content="Ashen Rounds — a round-based first-person survival game in a haunted bunker. Hold the breaches, buy the gates, and see how long you last."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+      <div id="vignette"></div>
+      <div id="hurt"></div>
+
+      <div id="hud" class="hidden">
+        <div class="top-left plate">
+          <div class="brand">Ashen Rounds</div>
+          <div class="kicker">Points</div>
+          <div id="points">500</div>
+          <div id="score-line">Score 0</div>
+        </div>
+        <div class="top-center">
+          <div id="round-line">Round 1</div>
+          <div id="left-line">6 husks</div>
+        </div>
+        <div class="top-right">
+          <div class="map-frame">
+            <canvas id="minimap" width="210" height="210"></canvas>
+          </div>
+          <div id="area-name">Ash Hall</div>
+        </div>
+        <div class="bottom-left plate">
+          <div class="kicker">Vitals</div>
+          <div class="hp-wrap"><div id="hp-fill"></div></div>
+          <div class="hp-row">
+            <span id="hp-text">100 / 100</span>
+            <span id="perks">—</span>
+          </div>
+        </div>
+        <div class="bottom-right plate">
+          <div id="slots"><i id="slot-a" class="on"></i><i id="slot-b" class="locked"></i></div>
+          <div id="gun-name">Cinder Pistol</div>
+          <div id="ammo">12  /  84</div>
+          <div class="reload-wrap"><div id="reload-fill"></div></div>
+        </div>
+        <div id="crosshair" style="--gap: 8px"><span></span><span></span><span></span><span></span></div>
+        <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+        <div id="floaters"></div>
+      </div>
+
+      <div id="banner" class="hidden">
+        <div id="banner-title">ROUND 1</div>
+        <div id="banner-sub">They smell the ember.</div>
+      </div>
+      <div id="prompt" class="hidden"></div>
+
+      <div id="menu">
+        <div class="panel">
+          <p class="eyebrow">Ruined outpost · Endless waves</p>
+          <h1>Ashen<br />Rounds</h1>
+          <p class="lede">A sealed bunker. Three gates. The dead keep coming until you don’t.</p>
+          <button id="play-btn" type="button">Enter the bunker</button>
+          <ul class="controls">
+            <li><b>WASD</b> move · <b>Shift</b> sprint</li>
+            <li><b>Mouse</b> look · <b>Click</b> shoot</li>
+            <li><b>R</b> reload · <b>V</b> knife</li>
+            <li><b>F</b> or <b>E</b> buy · hold to brace a breach</li>
+            <li><b>1</b> <b>2</b> or <b>Q</b> / wheel to swap arms</li>
+            <li><b>Esc</b> pause</li>
+          </ul>
+          <p id="menu-best" class="best"></p>
+        </div>
+      </div>
+
+      <div id="pause" class="hidden">
+        <div class="panel">
+          <p class="eyebrow">Held</p>
+          <h2>Paused</h2>
+          <button id="resume-btn" type="button">Resume</button>
+          <button id="restart-btn" class="ghost" type="button">Restart from round 1</button>
+          <button id="menu-btn" class="ghost" type="button">Title</button>
+        </div>
+      </div>
+
+      <div id="death" class="hidden">
+        <div class="panel">
+          <p class="eyebrow">The ash takes you</p>
+          <h2>Ash claims you</h2>
+          <p id="death-round" class="stat">Round 1</p>
+          <p id="death-score" class="stat">Score 0</p>
+          <p id="death-best" class="best"></p>
+          <button id="again-btn" type="button">Return to round 1</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
