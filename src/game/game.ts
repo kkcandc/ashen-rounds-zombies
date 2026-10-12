@@ -677,6 +677,9 @@ export class Game {
   private poseHusk(mesh: HuskMesh, husk: Husk) {
     mesh.group.visible = true
     paintHusk(mesh, husk.kind)
+    const peak = husk.flinchHead ? 0.5 : 0.42
+    const flinchT = husk.flinch > 0 ? Math.min(1, husk.flinch / peak) : 0
+    const lean = Math.pow(flinchT, 0.35) * (husk.flinchHead ? 1.05 : 0.9)
     mesh.group.position.set(husk.x, 0, husk.z)
     mesh.group.scale.setScalar(husk.scale)
     const dx = husk.x - husk.prevX
@@ -697,13 +700,11 @@ export class Game {
     mesh.armR.rotation.z = -0.32
     mesh.legL.rotation.x = tearing ? 0.08 : swing * 0.75
     mesh.legR.rotation.x = tearing ? 0.12 : -swing * 0.75 * mesh.drag
-    const peak = husk.flinchHead ? 0.5 : 0.42
-    const flinchT = husk.flinch > 0 ? Math.min(1, husk.flinch / peak) : 0
-    const lean = Math.pow(flinchT, 0.4) * (husk.flinchHead ? 0.62 : 0.44)
     const side = husk.id % 2 === 0 ? 1 : -1
-    mesh.group.rotation.z = Math.sin(husk.anim * 0.45 + mesh.phase) * 0.06 + lean * 0.7 * side
-    mesh.armL.rotation.x += tearing ? lean * 1.15 : -lean * 1.35
-    mesh.armR.rotation.x += tearing ? lean * 0.95 : -lean * 1.15
+    mesh.group.rotation.z = Math.sin(husk.anim * 0.45 + mesh.phase) * 0.06 + lean * 0.45 * side
+    mesh.group.translateZ(lean * 0.55)
+    mesh.armL.rotation.x += tearing ? lean * 1.7 : -lean * 1.2
+    mesh.armR.rotation.x += tearing ? lean * 1.55 : -lean * 1.05
     mesh.armL.rotation.z += lean * 0.95
     mesh.armR.rotation.z -= lean * 0.95
     if (husk.state === 'dying') {
