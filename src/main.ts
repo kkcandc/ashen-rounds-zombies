@@ -4,7 +4,7 @@ import '@fontsource/source-sans-3/400.css'
 import '@fontsource/source-sans-3/600.css'
 import { Game } from './game/game'
 
-document.documentElement.dataset.ashenBuild = 'flinch-9f36'
+document.documentElement.dataset.ashenBuild = 'weaponfeel-2026-10-22'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')
 if (!canvas) {

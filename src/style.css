@@ -221,6 +221,21 @@ html, body, #app {
   letter-spacing: 0.04em;
 }
 
+#ammo.reloading {
+  color: #ffb15a;
+  animation: ammo-pulse 0.32s ease-in-out infinite;
+}
+
+#ammo.seated {
+  color: #fff6e8;
+  text-shadow: 0 0 12px rgba(255, 180, 90, 0.85);
+}
+
+@keyframes ammo-pulse {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
 .reload-wrap { margin-left: auto; }
 
 #crosshair {
@@ -241,6 +256,17 @@ html, body, #app {
   border-radius: 50%;
   background: #ffb15a;
   box-shadow: 0 0 6px rgba(255, 106, 42, 0.9);
+  transform: scale(calc(1 + var(--bloom, 0) * 1.8));
+}
+
+#crosshair.firing::after {
+  background: #fff8ee;
+  box-shadow: 0 0 14px 3px rgba(255, 140, 48, 0.95);
+}
+
+#crosshair.firing span {
+  background: #fff1dc;
+  box-shadow: 0 0 8px rgba(255, 130, 48, 0.9);
 }
 
 #crosshair span {
@@ -450,6 +476,11 @@ button.ghost {
   margin: 0;
   font-size: 20px;
   color: var(--bone);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ammo.reloading { animation: none; opacity: 1; }
+  #hp-fill.low { animation: none; }
 }
 
 @media (max-width: 720px) {

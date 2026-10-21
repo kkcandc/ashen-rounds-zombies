@@ -118,10 +118,79 @@ export function bunkerImpact(
 }
 
 const POOL = 180
+const FLASH_LIFE = 0.14
+const BRASS_POOL = 18
+
+function muzzleTexture(): THREE.CanvasTexture {
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D is unavailable')
+  const cx = size / 2
+  const cy = size / 2
+  for (let i = 0; i < 10; i++) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate((i / 10) * Math.PI)
+    const streak = ctx.createLinearGradient(0, 0, 60, 0)
+    streak.addColorStop(0, 'rgba(255,255,255,0.95)')
+    streak.addColorStop(0.3, 'rgba(255,196,110,0.65)')
+    streak.addColorStop(1, 'rgba(255,90,20,0)')
+    ctx.fillStyle = streak
+    const h = i % 2 === 0 ? 5 : 2.4
+    ctx.fillRect(0, -h / 2, 60, h)
+    ctx.restore()
+  }
+  const core = ctx.createRadialGradient(cx, cy, 1, cx, cy, 30)
+  core.addColorStop(0, 'rgba(255,255,255,1)')
+  core.addColorStop(0.35, 'rgba(255,214,140,0.9)')
+  core.addColorStop(1, 'rgba(255,110,30,0)')
+  ctx.fillStyle = core
+  ctx.beginPath()
+  ctx.arc(cx, cy, 30, 0, Math.PI * 2)
+  ctx.fill()
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+function brassTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 32
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D is unavailable')
+  ctx.fillStyle = '#ffd56a'
+  ctx.fillRect(0, 0, 32, 64)
+  ctx.fillStyle = '#6a3e14'
+  ctx.fillRect(0, 0, 32, 9)
+  ctx.fillRect(0, 55, 32, 9)
+  ctx.fillStyle = '#fff6d2'
+  ctx.fillRect(8, 12, 7, 40)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+type Brass = {
+  mesh: THREE.Mesh
+  life: number
+  max: number
+  vx: number
+  vy: number
+  vz: number
+  sx: number
+  sy: number
+  sz: number
+}
 
 export class Juice {
   readonly flash: THREE.Mesh
+  private readonly flashMats: THREE.MeshBasicMaterial[] = []
   private readonly flashLife = { t: 0 }
+  private flashRoll = 0
   private readonly sparks: Spec[] = []
   private readonly pos: Float32Array
   private readonly col: Float32Array
@@ -131,31 +200,72 @@ export class Juice {
   private readonly up = new THREE.Vector3(0, 0, 1)
   private readonly tmp = new THREE.Vector3()
   private readonly tmp2 = new THREE.Vector3()
+  private readonly brass: Brass[] = []
 
   constructor(scene: THREE.Scene) {
     const flashMat = new THREE.MeshBasicMaterial({
-      color: 0xfff2d2,
+      map: muzzleTexture(),
+      color: 0xfff6df,
       transparent: true,
-      opacity: 0.95,
+      opacity: 1,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      depthTest: false,
       side: THREE.DoubleSide,
     })
-    this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.28), flashMat)
+    this.flashMats.push(flashMat)
+    this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), flashMat)
     this.flash.visible = false
-    this.flash.renderOrder = 3
+    this.flash.frustumCulled = false
+    this.flash.renderOrder = 4
     scene.add(this.flash)
-    const core = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.1, 0.1),
-      new THREE.MeshBasicMaterial({
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    })
+    const streakMat = new THREE.MeshBasicMaterial({
+      color: 0xffd7a4,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    })
+    this.flashMats.push(coreMat, streakMat)
+    const core = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), coreMat)
+    const streak = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.06), streakMat)
+    this.flash.add(core, streak)
+
+    const brassGeo = new THREE.CylinderGeometry(0.024, 0.02, 0.078, 8)
+    const brassMap = brassTexture()
+    for (let i = 0; i < BRASS_POOL; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: brassMap,
         color: 0xffffff,
         transparent: true,
-        blending: THREE.AdditiveBlending,
+        opacity: 1,
         depthWrite: false,
-        side: THREE.DoubleSide,
-      }),
-    )
-    this.flash.add(core)
+      })
+      const mesh = new THREE.Mesh(brassGeo, mat)
+      mesh.visible = false
+      mesh.frustumCulled = false
+      scene.add(mesh)
+      this.brass.push({
+        mesh,
+        life: 0,
+        max: 1,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        sx: 0,
+        sy: 0,
+        sz: 0,
+      })
+    }
 
     this.pos = new Float32Array(POOL * 3)
     this.col = new Float32Array(POOL * 3)
@@ -213,16 +323,50 @@ export class Juice {
   }
 
   muzzle(worldPos: THREE.Vector3, camera: THREE.Camera) {
+    this.flashRoll = Math.random() * Math.PI
+    this.flashLife.t = FLASH_LIFE
     this.flash.visible = true
+    const s = 0.92 + Math.random() * 0.28
+    this.flash.scale.setScalar(s)
+    this.flashMats[0].color.setHex(Math.random() > 0.35 ? 0xfff6df : 0xffc56a)
+    this.setFlashOpacity(1)
+    this.placeFlash(worldPos, camera)
+  }
+
+  /** Keep the sprite on the barrel after the viewmodel kicks. */
+  placeFlash(worldPos: THREE.Vector3, camera: THREE.Camera) {
+    if (this.flashLife.t <= 0) return
     this.flash.position.copy(worldPos)
     this.flash.quaternion.copy(camera.quaternion)
-    this.flash.rotateZ(Math.random() * Math.PI)
-    const s = 0.7 + Math.random() * 0.6
-    this.flash.scale.setScalar(s)
-    this.flashLife.t = 0.045
-    const mat = this.flash.material as THREE.MeshBasicMaterial
+    this.flash.rotateZ(this.flashRoll)
+  }
+
+  eject(pos: THREE.Vector3, right: THREE.Vector3, up: THREE.Vector3, forward: THREE.Vector3) {
+    const slot = this.brass.find((b) => b.life <= 0)
+    if (!slot) return
+    const life = 1.05 + Math.random() * 0.25
+    slot.life = life
+    slot.max = life
+    slot.mesh.visible = true
+    slot.mesh.scale.setScalar(1.4)
+    slot.mesh.position.copy(pos).addScaledVector(right, 0.16).addScaledVector(up, 0.06)
+    slot.mesh.rotation.set(Math.random() * 6.2, Math.random() * 6.2, Math.random() * 6.2)
+    const mat = slot.mesh.material as THREE.MeshBasicMaterial
     mat.opacity = 1
-    mat.color.setHex(Math.random() > 0.5 ? 0xfff4d8 : 0xffb15a)
+    const jitter = (n: number) => (Math.random() - 0.5) * n
+    const spin = (n: number) => (Math.random() < 0.5 ? -1 : 1) * (9 + Math.random() * n)
+    slot.vx = right.x * 1.35 + up.x * 1.45 + forward.x * 0.15 + jitter(0.35)
+    slot.vy = right.y * 1.35 + up.y * 1.45 + forward.y * 0.15 + 0.4 + jitter(0.3)
+    slot.vz = right.z * 1.35 + up.z * 1.45 + forward.z * 0.15 + jitter(0.35)
+    slot.sx = spin(8)
+    slot.sy = spin(10)
+    slot.sz = spin(8)
+  }
+
+  private setFlashOpacity(opacity: number) {
+    const shown = opacity > 0.02
+    this.flash.visible = shown
+    for (const mat of this.flashMats) mat.opacity = opacity
   }
 
   tracer(from: THREE.Vector3, to: THREE.Vector3) {
@@ -294,9 +438,31 @@ export class Juice {
   update(dt: number) {
     if (this.flashLife.t > 0) {
       this.flashLife.t -= dt
-      const mat = this.flash.material as THREE.MeshBasicMaterial
-      mat.opacity = Math.max(0, this.flashLife.t / 0.045)
-      if (this.flashLife.t <= 0) this.flash.visible = false
+      const u = Math.max(0, this.flashLife.t / FLASH_LIFE)
+      this.setFlashOpacity(Math.pow(u, 1.35))
+    }
+    for (const spec of this.brass) {
+      if (spec.life <= 0) continue
+      spec.life -= dt
+      spec.vy -= 9.4 * dt
+      spec.mesh.position.x += spec.vx * dt
+      spec.mesh.position.y += spec.vy * dt
+      spec.mesh.position.z += spec.vz * dt
+      if (spec.mesh.position.y < 0.03 && spec.vy < 0) {
+        spec.mesh.position.y = 0.03
+        spec.vy *= -0.32
+        spec.vx *= 0.55
+        spec.vz *= 0.55
+        spec.sx *= 0.45
+        spec.sy *= 0.45
+        spec.sz *= 0.45
+      }
+      spec.mesh.rotation.x += spec.sx * dt
+      spec.mesh.rotation.y += spec.sy * dt
+      spec.mesh.rotation.z += spec.sz * dt
+      const fade = spec.life < 0.38 ? Math.max(0, spec.life / 0.38) : 1
+      ;(spec.mesh.material as THREE.MeshBasicMaterial).opacity = fade
+      if (spec.life <= 0) spec.mesh.visible = false
     }
     for (let i = 0; i < this.sparks.length; i++) {
       const spec = this.sparks[i]
