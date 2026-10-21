@@ -228,6 +228,12 @@ export function createViewmodel(): Viewmodel {
     node.position.set(0, y, z)
     g.add(node)
   }
+  const eject = (g: THREE.Group, z: number, y = 0.06) => {
+    const node = new THREE.Object3D()
+    node.name = 'eject'
+    node.position.set(0.048, y, z)
+    g.add(node)
+  }
 
   add('pistol', (g) => {
     box(g, 0.085, 0.1, 0.22, 0, 0.03, -0.04, dark)
@@ -236,6 +242,7 @@ export function createViewmodel(): Viewmodel {
     box(g, 0.09, 0.035, 0.05, 0, -0.01, 0.04, metal)
     box(g, 0.016, 0.045, 0.04, 0, 0.09, -0.02, metal)
     muzzle(g, -0.31, 0.055)
+    eject(g, -0.04, 0.08)
   })
   add('repeater', (g) => {
     box(g, 0.07, 0.09, 0.34, 0, 0.02, -0.08, dark)
@@ -244,6 +251,7 @@ export function createViewmodel(): Viewmodel {
     box(g, 0.05, 0.14, 0.05, 0, -0.12, 0.02, dark)
     box(g, 0.06, 0.08, 0.16, 0, 0.01, 0.16, wood)
     muzzle(g, -0.4, 0.045)
+    eject(g, -0.06, 0.06)
   })
   add('lance', (g) => {
     box(g, 0.1, 0.08, 0.2, 0, 0.01, -0.02, wood)
@@ -251,6 +259,7 @@ export function createViewmodel(): Viewmodel {
     cyl(g, 0.02, 0.36, 0.035, 0.03, -0.22, metal)
     box(g, 0.09, 0.12, 0.08, 0, -0.06, 0.1, wood)
     muzzle(g, -0.42, 0.03)
+    eject(g, -0.02, 0.055)
   })
   add('pyre', (g) => {
     box(g, 0.06, 0.07, 0.42, 0, 0.03, -0.1, dark)
@@ -259,6 +268,7 @@ export function createViewmodel(): Viewmodel {
     box(g, 0.02, 0.05, 0.12, 0, 0.09, -0.05, metal)
     box(g, 0.05, 0.06, 0.2, 0, 0.02, 0.28, wood)
     muzzle(g, -0.68, 0.05)
+    eject(g, -0.08, 0.07)
   })
   add('carbine', (g) => {
     box(g, 0.07, 0.08, 0.36, 0, 0.02, -0.08, dark)
@@ -266,18 +276,21 @@ export function createViewmodel(): Viewmodel {
     box(g, 0.08, 0.14, 0.1, 0, -0.05, 0.1, wood)
     box(g, 0.055, 0.08, 0.18, 0, 0.01, 0.22, wood)
     muzzle(g, -0.44, 0.04)
+    eject(g, -0.05, 0.06)
   })
   add('splinter', (g) => {
     box(g, 0.12, 0.09, 0.22, 0, 0.02, -0.04, wood)
     cyl(g, 0.028, 0.28, 0, 0.035, -0.22, metal)
     box(g, 0.08, 0.12, 0.07, 0, -0.07, 0.1, dark)
     muzzle(g, -0.38, 0.035)
+    eject(g, -0.02, 0.06)
   })
   add('howl', (g) => {
     box(g, 0.14, 0.12, 0.2, 0, 0.02, -0.02, brass)
     cyl(g, 0.04, 0.16, 0, 0.04, -0.16, dark)
     box(g, 0.08, 0.14, 0.08, 0, -0.08, 0.1, wood)
     muzzle(g, -0.26, 0.04)
+    eject(g, 0.02, 0.07)
   })
   add('spire', (g) => {
     box(g, 0.055, 0.06, 0.28, 0, 0.03, -0.02, dark)
@@ -285,6 +298,7 @@ export function createViewmodel(): Viewmodel {
     box(g, 0.06, 0.1, 0.16, 0, -0.02, 0.16, wood)
     box(g, 0.018, 0.05, 0.14, 0, 0.09, 0.02, metal)
     muzzle(g, -0.78, 0.045)
+    eject(g, -0.02, 0.07)
   })
   add('drum', (g) => {
     box(g, 0.09, 0.1, 0.28, 0, 0.03, -0.06, dark)
@@ -295,6 +309,7 @@ export function createViewmodel(): Viewmodel {
     g.add(drum)
     box(g, 0.07, 0.1, 0.08, 0, -0.02, 0.16, wood)
     muzzle(g, -0.36, 0.05)
+    eject(g, -0.02, 0.08)
   })
 
   for (const id of Object.keys(WEAPONS)) {
@@ -302,6 +317,7 @@ export function createViewmodel(): Viewmodel {
       add(id, (g) => {
         box(g, 0.08, 0.1, 0.4, 0, 0, -0.1, metal)
         muzzle(g, -0.32, 0.02)
+        eject(g, -0.04, 0.05)
       })
     }
   }

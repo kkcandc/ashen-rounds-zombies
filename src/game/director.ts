@@ -310,6 +310,7 @@ export class Director {
     inst.mag += take
     inst.reserve -= take
     p.reload = 0
+    this.events.push({ type: 'reloaded' })
   }
 
   private startReload() {

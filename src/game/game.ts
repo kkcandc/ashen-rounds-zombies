@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { WEAPONS } from './balance'
+import { WEAPONS, type Report } from './balance'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
@@ -44,7 +44,12 @@ export class Game {
   private pitch = 0
   private bob = 0
   private recoil = 0
-  private kick = 0
+  private readonly viewKick = { z: 0, zV: 0, pitch: 0, pitchV: 0, roll: 0, rollV: 0 }
+  private reduceMotion = false
+  private seatFlash = 0
+  private readonly ejectWorld = new THREE.Vector3()
+  private readonly rightWorld = new THREE.Vector3()
+  private readonly upWorld = new THREE.Vector3()
   private shake = 0
   private shakeMag = 0
   private shakeSeed = 0
@@ -108,9 +113,9 @@ export class Game {
     this.gunRoot.scale.setScalar(1.5)
     this.camera.add(this.gunRoot)
 
-    this.flash = new THREE.SpotLight(0xfff1dc, 0, 26, 0.5, 0.35, 1)
-    this.flash.position.set(0.12, -0.08, -0.2)
-    this.flash.target.position.set(0, -0.04, -1)
+    this.flash = new THREE.SpotLight(0xffe2b0, 0, 16, 0.82, 0.5, 1)
+    this.flash.position.set(0.18, -0.06, -0.78)
+    this.flash.target.position.set(0.12, -0.08, -2.6)
     this.camera.add(this.flash)
     this.camera.add(this.flash.target)
     const lamp = new THREE.PointLight(0xffd7b0, 8, 12, 2)
@@ -144,6 +149,12 @@ export class Game {
       }),
     )
     this.composer.addPass(new OutputPass())
+
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    this.reduceMotion = motion.matches
+    motion.addEventListener('change', () => {
+      this.reduceMotion = motion.matches
+    })
 
     this.resize()
     window.addEventListener('resize', () => this.resize())
@@ -318,6 +329,9 @@ export class Game {
   private frame() {
     if (!this.running) return
     const dt = Math.min(0.05, this.clock.getDelta())
+    this.decayFlash(dt)
+    this.juice.update(dt)
+    if (this.seatFlash > 0) this.seatFlash = Math.max(0, this.seatFlash - dt)
     if (this.mode === 'menu') {
       this.idle += dt
       this.camera.position.set(SPAWN.x, 1.62, SPAWN.z)
@@ -380,28 +394,31 @@ export class Game {
     if (this.shake > 0) {
       const left = this.shake
       this.shake = Math.max(0, this.shake - dt)
-      const amp = this.shakeMag * (left / 0.2)
-      const t = this.shakeSeed + performance.now() * 0.055
-      this.camera.position.x += Math.sin(t * 1.7) * amp
-      this.camera.position.y += Math.cos(t * 2.2) * amp * 0.65
-      this.camera.rotation.z = Math.sin(t * 1.4) * amp * 2.4
+      if (this.reduceMotion) {
+        this.camera.rotation.z = 0
+      } else {
+        const amp = this.shakeMag * (left / 0.2)
+        const t = this.shakeSeed + performance.now() * 0.055
+        this.camera.position.x += Math.sin(t * 1.7) * amp
+        this.camera.position.y += Math.cos(t * 2.2) * amp * 0.65
+        this.camera.rotation.z = Math.sin(t * 1.4) * amp * 2.4
+      }
     } else {
       this.camera.rotation.z = 0
     }
     this.gunRoot.visible = this.mode !== 'dead'
-    this.kick = Math.max(0, this.kick - dt * 8)
-    this.gunRoot.position.x = 0.2
-    this.gunRoot.position.z = -0.5 - this.kick * 0.1
-    this.gunRoot.position.y = -0.16 + Math.sin(this.bob * 2) * Math.min(0.012, speed * 0.002)
-    this.gunRoot.rotation.x = this.kick * 0.22 + (this.director.player.reload > 0 ? 0.28 : 0)
+    this.stepViewKick(dt)
+    const pose = this.reloadPose()
+    const kickZ = Math.max(-0.16, Math.min(0.05, this.viewKick.z))
+    const kickPitch = Math.max(-0.16, Math.min(0.46, this.viewKick.pitch))
+    const kickRoll = Math.max(-0.2, Math.min(0.2, this.viewKick.roll))
+    this.gunRoot.position.x = 0.2 + pose.x
+    this.gunRoot.position.z = -0.5 + kickZ + pose.z
+    this.gunRoot.position.y = -0.16 + Math.sin(this.bob * 2) * Math.min(0.012, speed * 0.002) + pose.y
+    this.gunRoot.rotation.x = kickPitch + pose.pitch
     const knife = this.director.player.knifeCd
-    this.gunRoot.rotation.z = knife > 0 ? Math.sin((0.62 - knife) * 9) * 0.45 : 0
-    if (this.muzzleLeft > 0) {
-      this.muzzleLeft = Math.max(0, this.muzzleLeft - dt)
-      this.flash.intensity = 84 * (this.muzzleLeft / 0.05)
-    } else {
-      this.flash.intensity = 0
-    }
+    this.gunRoot.rotation.z = (knife > 0 ? Math.sin((0.62 - knife) * 9) * 0.45 : 0) + pose.roll + kickRoll
+    this.placeMuzzleLight()
 
     if (this.mode === 'play' && speed > 2.2) {
       this.foot -= dt
@@ -426,7 +443,7 @@ export class Game {
       } else if (e.type === 'shot') {
         const def = WEAPONS[e.weaponId]
         this.sfx.shot(def.report)
-        this.kick = Math.min(1, this.kick + (def.report === 'shot' || def.report === 'heavy' ? 0.85 : 0.45))
+        this.impulseView(def.report)
         this.recoil = Math.min(0.08, this.recoil + (def.report === 'rifle' ? 0.03 : 0.012))
         this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch + (def.report === 'rifle' ? 0.012 : 0.004)))
         this.fireJuice(e.weaponId, e.hits)
@@ -455,6 +472,12 @@ export class Game {
         if (landed) this.sfx.hit(head)
       } else if (e.type === 'dry') this.sfx.dry()
       else if (e.type === 'reload') this.sfx.reload()
+      else if (e.type === 'reloaded') {
+        this.viewKick.zV += 3.8
+        this.viewKick.pitchV -= 3.1
+        this.sfx.seat()
+        this.seatFlash = 0.24
+      }
       else if (e.type === 'player-hit') {
         this.sfx.hurt()
         this.recoil += 0.02
@@ -524,9 +547,15 @@ export class Game {
     if (muzzle) muzzle.getWorldPosition(this.muzzleWorld)
     else this.muzzleWorld.copy(this.camera.position)
     this.juice.muzzle(this.muzzleWorld, this.camera)
-    this.muzzleLeft = 0.05
-    this.flash.intensity = 84
+    this.muzzleLeft = 0.09
+    this.flash.intensity = 96
     this.aimWorld.set(0, 0, -1).applyQuaternion(this.camera.quaternion)
+    this.rightWorld.set(1, 0, 0).applyQuaternion(this.camera.quaternion)
+    this.upWorld.set(0, 1, 0).applyQuaternion(this.camera.quaternion)
+    const port = this.guns[weaponId]?.getObjectByName('eject')
+    if (port) port.getWorldPosition(this.ejectWorld)
+    else this.ejectWorld.copy(this.muzzleWorld)
+    this.juice.eject(this.ejectWorld, this.rightWorld, this.upWorld, this.aimWorld)
     const origin = this.camera.position
     const world = bunkerImpact(
       origin.x,
@@ -554,6 +583,73 @@ export class Game {
       this.juice.burst(world.x, world.y, world.z, 'spark', 8)
     } else if (shown.length === 0) {
       this.juice.tracer(this.muzzleWorld, origin.clone().addScaledVector(this.aimWorld, 16))
+    }
+  }
+
+  private decayFlash(dt: number) {
+    if (this.muzzleLeft <= 0) {
+      this.flash.intensity = 0
+      return
+    }
+    this.muzzleLeft = Math.max(0, this.muzzleLeft - dt)
+    const k = this.muzzleLeft / 0.09
+    this.flash.intensity = 96 * k * k
+  }
+
+  private placeMuzzleLight() {
+    if (this.muzzleLeft <= 0 && !this.juice.flash.visible) return
+    const muzzle = this.guns[this.director.currentWeapon().id]?.getObjectByName('muzzle')
+    if (!muzzle) return
+    this.camera.updateMatrixWorld(true)
+    muzzle.getWorldPosition(this.muzzleWorld)
+    this.juice.placeFlash(this.muzzleWorld, this.camera)
+    if (this.muzzleLeft <= 0) return
+    const local = this.muzzleWorld.clone()
+    this.camera.worldToLocal(local)
+    this.flash.position.copy(local)
+    this.flash.target.position.set(local.x, local.y - 0.03, local.z - 1.8)
+    this.flash.target.updateMatrixWorld()
+  }
+
+  private impulseView(report: Report) {
+    const heavy = report === 'shot' || report === 'heavy'
+    const rifle = report === 'rifle'
+    this.viewKick.zV -= heavy ? 7.4 : rifle ? 5.2 : 4.8
+    this.viewKick.pitchV += heavy ? 14 : rifle ? 10.5 : 9.4
+    this.viewKick.rollV += (Math.random() * 2 - 1) * (heavy ? 4.2 : 2.6)
+  }
+
+  private stepViewKick(dt: number) {
+    const kick = this.viewKick
+    const step = (pos: number, vel: number, stiffness: number, damp: number) => {
+      const accel = -stiffness * pos - damp * vel
+      const nextVel = vel + accel * dt
+      return { pos: pos + nextVel * dt, vel: nextVel }
+    }
+    const z = step(kick.z, kick.zV, 88, 11.5)
+    const pitch = step(kick.pitch, kick.pitchV, 108, 11)
+    const roll = step(kick.roll, kick.rollV, 76, 9.5)
+    kick.z = z.pos
+    kick.zV = z.vel
+    kick.pitch = pitch.pos
+    kick.pitchV = pitch.vel
+    kick.roll = roll.pos
+    kick.rollV = roll.vel
+  }
+
+  private reloadPose() {
+    const p = this.director.player
+    if (p.reload <= 0 || p.reloadDur <= 0) return { x: 0, y: 0, z: 0, pitch: 0, roll: 0 }
+    const u = 1 - p.reload / p.reloadDur
+    const drop = Math.sin(Math.min(1, u / 0.3) * (Math.PI * 0.5))
+    const back = u < 0.76 ? 1 : Math.cos(Math.min(1, (u - 0.76) / 0.24) * (Math.PI * 0.5))
+    const weight = drop * back
+    return {
+      x: 0.045 * weight,
+      y: -0.1 * weight,
+      z: 0.11 * weight,
+      pitch: 0.58 * weight,
+      roll: 0.52 * Math.sin(Math.min(1, u / 0.76) * Math.PI) * (u < 0.76 ? 1 : back),
     }
   }
 
@@ -594,7 +690,6 @@ export class Game {
     }
     drift(this.scenery.dust, 0.12, 8)
     drift(this.scenery.embers, 0.28, 7)
-    this.juice.update(dt)
 
     for (const door of this.scenery.doors) {
       const open = this.director.doors[door.id]
@@ -760,8 +855,15 @@ export class Game {
       const ratio = p.reload > 0 && p.reloadDur > 0 ? 1 - p.reload / p.reloadDur : 0
       reload.style.width = `${ratio * 100}%`
     }
+    const ammo = document.getElementById('ammo')
+    ammo?.classList.toggle('reloading', p.reload > 0)
+    ammo?.classList.toggle('seated', this.seatFlash > 0)
     const cross = document.getElementById('crosshair') as HTMLElement | null
-    if (cross) cross.style.setProperty('--gap', `${8 + p.bloom * 16 + (Math.hypot(p.vx, p.vz) > 5 ? 4 : 0)}px`)
+    if (cross) {
+      cross.style.setProperty('--gap', `${8 + p.bloom * 24 + (Math.hypot(p.vx, p.vz) > 5 ? 4 : 0)}px`)
+      cross.style.setProperty('--bloom', p.bloom.toFixed(3))
+      cross.classList.toggle('firing', p.bloom > 0.08)
+    }
     const hurt = document.getElementById('hurt')
     if (hurt) {
       const low = p.health / p.maxHealth < 0.3 ? 0.28 : 0

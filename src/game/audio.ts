@@ -182,6 +182,12 @@ export class Sfx {
 
   reload() {
     this.tone(280, 0.07, 0.045, 'triangle')
+    this.envNoise(0.06, 900, 0.6, 0.04)
+  }
+
+  seat() {
+    this.tone(720, 0.035, 0.05, 'square')
+    this.tone(480, 0.06, 0.04, 'triangle')
   }
 
   groan() {

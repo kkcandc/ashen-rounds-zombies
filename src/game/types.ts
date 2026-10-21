@@ -79,6 +79,7 @@ export type GameEvent =
   | { type: 'shot'; weaponId: string; hits: { x: number; y: number; z: number; head: boolean }[] }
   | { type: 'dry' }
   | { type: 'reload' }
+  | { type: 'reloaded' }
   | { type: 'knife'; hit: boolean; kill: boolean }
   | { type: 'points'; amount: number; reason: string }
   | { type: 'buy'; label: string }
